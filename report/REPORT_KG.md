@@ -197,11 +197,18 @@ RETURN k.key AS key, k.name AS name, k.doc_id AS doc_id ORDER BY k.doc_id
 Q4 0.33→0.67, Q5 0.40→0.60), trung bình nhóm này **recall 0.35 → 0.76**. Khi câu hỏi nằm gọn trong
 một nguồn, KG **không giúp và có thể hại**: Q1 hòa, Q2 **thua** (1.00 → 0.50).
 
-**Điểm hòa vốn.** Chi phí dựng graph là **533 giây và 53.224 token, trả một lần**; phần mỗi câu chỉ
-tăng **×2.6 thời gian** và **×4.1 token**. Với đơn giá `gpt-4o-mini` quy đổi, đổi 1 lần ≈ **$0.0149**;
-mỗi câu hỏi thêm ≈ **$0.00053**. Nếu một hệ thống dùng KG cho *mọi* câu hỏi thì hòa vốn ngay ở câu
-thứ ~29 — nhưng nếu chỉ dùng cho câu `cross-kb` thì chỉ cần **3 câu** là đã đủ bù. Nói cách khác:
-**KG chỉ đáng tiền khi tỉ lệ câu hỏi xuyên 2 KB đủ lớn**; ở corpus này tỉ lệ đó là 3/6 = 50%.
+**Điểm hòa vốn.** Chi phí dựng graph là **533,3 giây và 53.224 token, trả một lần**; phần mỗi câu chỉ
+tăng **×2,6 thời gian** và **×4,1 token input**. Quy đổi theo giá `gpt-4o-mini`:
+một lần dựng graph ≈ **$0,0153**, mỗi câu hỏi thêm ≈ **$0,00053**. Nên:
+
+- Nếu dùng KG cho **mọi** câu hỏi: hòa vốn sau **≈ 29 câu**.
+- Nếu chỉ dùng cho **câu `cross-kb`** (3/6 câu): hòa vốn sau **≈ 10 câu `cross-kb`** —
+  tức khoảng **20 câu hỏi tổng** với tỉ lệ 50% câu xuyên 2 KB.
+
+Nói cách khác: **KG chỉ đáng tiền khi số câu hỏi đủ lớn và tỉ lệ câu xuyên 2 KB đủ cao**. Với 6 câu
+của lab này thì **chưa hòa vốn** — đây là kết luận thành thật, không phải lỗi: quy mô 20 bài báo +
+18 Điều luật là quá nhỏ để hấp thụ chi phí dựng graph. Ở quy mô vài nghìn tài liệu và hàng trăm câu
+hỏi thì tỉ lệ này đảo chiều.
 
 **Điều kiện cụ thể** (theo loại dữ liệu của tôi): KG đáng dùng khi (1) câu hỏi cần thông tin ở **cả
 tài liệu lẫn văn bản quy phạm**, (2) quan hệ cần **nhiều bước** (vụ → tội → Điều → khoản → ngưỡng),
