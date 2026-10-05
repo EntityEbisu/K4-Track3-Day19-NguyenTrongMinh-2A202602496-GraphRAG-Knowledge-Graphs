@@ -1,6 +1,6 @@
 # Báo cáo Day 19 — Flat RAG vs GraphRAG
 
-**Họ tên:** Nguyễn Trọng Minh  **MSSV:** 02496  **Ngày:** 05/10/2026
+**Họ tên:** Nguyễn Trọng Minh  **MSSV:** 2A202602496  **Ngày:** 05/10/2026
 
 > Mọi số liệu lấy từ `ket_qua_benchmark_kg.txt` (sinh bằng `python bench_kg.py --judge`).
 > Bản thiết kế ontology nộp ở `report/ONTOLOGY.md`. Bằng chứng Cypher đầy đủ:
@@ -113,6 +113,23 @@ MATCH (s:Substance) RETURN s.name AS name,
   Bằng chứng rõ nhất: **`Ketamine` không hề được luật `MENTIONS` (0) nhưng tin dùng 8 lần** — nó chỉ
   sống ở một phía, đúng cái lỗi ontology gợi ý mô tả. Ngược lại `MDMA` được cả hai phía dùng
   (18 / 7) nên nối được. Và `cần sa` (luật, 20) vs `need sa` (tin, 2) là **hai node cho cùng một chất**.
+
+  Lỗi này **không chỉ ở `Substance`** — `Person` cũng bị trùng. Trong 4 bài báo nói về "Hoàng Nato",
+  LLM tạo ra **hai node `Person` cho cùng một con người**, và cả hai đều để trống `aliases`:
+
+```cypher
+MATCH (p:Person) RETURN p.name AS name, p.aliases AS aliases,
+       count { (p)-[:INVOLVED_IN]->() } AS cases ORDER BY name
+```
+```
+{'name': 'Dương Minh Tuấn', 'aliases': [], 'cases': 3}   <-- cùng một người
+{'name': 'Hoàng Nato',     'aliases': [], 'cases': 1}   <-- biệt danh, bị tách thành node riêng
+```
+
+  Đáng chú ý: đây đúng là lỗi mà property `aliases` **sinh ra để chống** — nhưng vì LLM điền không
+  nhất quán (biết tên thật ở bài này, lại dùng biệt danh ở bài khác), `aliases` rỗng nên cơ chế
+  không kích hoạt được. Đây là bằng chứng cho thấy **entity-resolution dựa vào LLM không đáng tin**,
+  và là lý do tôi khóa `Case` theo `doc_id` thay vì theo tên.
 - **Nguyên nhân:** nằm ở **bước thiết kế ontology + bước trích xuất LLM**. `canonical_substance()`
   của tôi chỉ có 10 alias phủ tên luật; các tên chất **không có trong BLHS** (`etomidate`,
   `thuốc lắc`, `pod chill`, `ma túy`, `rượu`) không khớp canonical nào nên tôi giữ nguyên tên LLM
@@ -120,8 +137,11 @@ MATCH (s:Substance) RETURN s.name AS name,
 - **Đề xuất sửa:** mở rộng `SUBSTANCE_ALIASES` thêm `need sa`/`cây cần sa` → `cần sa`, và
   `thuốc lắc`/`ma túy tổng hợp` → `Methamphetamine`. Với chất **không có trong BLHS** (`etomidate`,
   `pod chill`) thì **không nên** ép vào node luật — cách đúng là thêm property
-  `in_law: false` để câu hỏi aggregation biết nó tồn tại nhưng không có khung phạt. Đánh đổi: bảng
-  alias dài hơn và phải bảo trì tay; bù lại Q6 (aggregation) đếm đúng hơn.
+  `in_law: false` để câu hỏi aggregation biết nó tồn tại nhưng không có khung phạt.
+  Riêng `Person`, cần một bước **resolve trước khi `MERGE`**: gom các node có cùng `doc_id` hoặc
+  cùng tập bài báo, rồi hợp nhất theo tên thật + biệt danh (ghi biệt danh vào `aliases` thay vì
+  tạo node mới). Đánh đổi: thêm một lượt Cypher gom nhóm trước khi ghi, và tăng rủi ro gộp nhầm
+  hai người trùng tên; bù lại Q2 và Q4 (tìm theo biệt danh) sẽ chính xác hơn.
 
 ### Lỗi E5: LLM lệch với dữ kiện trong graph
 
