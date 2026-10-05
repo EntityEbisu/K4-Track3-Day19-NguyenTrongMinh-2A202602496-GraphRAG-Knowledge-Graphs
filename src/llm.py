@@ -85,6 +85,20 @@ def _strip_fences(text: str) -> str:
         text = text.rsplit("```", 1)[0]
     return text.strip()
 
+# Lenient schema for json_schema mode: the callers' own prompts constrain the shape, this only
+# guarantees a parseable JSON object back (e.g. LM Studio rejects response_format json_object).
+_JSON_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": True}
+
+def _rejects_json_object(error: Exception) -> bool:
+    """True when the server refused response_format={'type':'json_object'} specifically.
+
+    LM Studio words it as "'response_format.type' must be 'json_schema' or 'text'" — it never echoes
+    the rejected value, so match on response_format + json_schema. Anything else (auth, rate limit,
+    network) must propagate, not silently retry.
+    """
+    message = str(error).lower()
+    return "response_format" in message and ("json_object" in message or "json_schema" in message)
+
 def _openai_client(provider: str):
     from openai import OpenAI
 
@@ -115,29 +129,40 @@ class MeteredLLM:
                               else _openai_client(self.embed_provider))
 
     def chat(self, prompt: str, json_mode: bool = False) -> str:
-        start = time.perf_counter()
-        if self.chat_provider == "anthropic":
-            text, model, tokens_in, tokens_out = self._chat_anthropic(prompt)
-        else:
-            if json_mode and self.chat_provider != "gemini":
-                response = self._chat_client.chat.completions.create(
-                    model=self.chat_model_id,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                    response_format={"type": "json_object"},
-                )
+            start = time.perf_counter()
+            if self.chat_provider == "anthropic":
+                text, model, tokens_in, tokens_out = self._chat_anthropic(prompt)
             else:
-                response = self._chat_client.chat.completions.create(
-                    model=self.chat_model_id,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                )
-            text, model = response.choices[0].message.content or "", self.chat_model_id
-            usage = response.usage
-            tokens_in = usage.prompt_tokens if usage else 0
-            tokens_out = usage.completion_tokens if usage else 0
-        self.usage += Usage(1, tokens_in, tokens_out, price(model, tokens_in, tokens_out), time.perf_counter() - start)
-        return _strip_fences(text) if json_mode else text
+                if json_mode and self.chat_provider != "gemini":
+                    try:
+                        response = self._chat_client.chat.completions.create(
+                            model=self.chat_model_id,
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0,
+                            response_format={"type": "json_object"},
+                        )
+                    except Exception as error:  # some OpenAI-compatible servers only accept json_schema
+                        if not _rejects_json_object(error):
+                            raise
+                        response = self._chat_client.chat.completions.create(
+                            model=self.chat_model_id,
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0,
+                            response_format={"type": "json_schema", "json_schema": {
+                                "name": "json", "strict": False, "schema": _JSON_SCHEMA}},
+                        )
+                else:
+                    response = self._chat_client.chat.completions.create(
+                        model=self.chat_model_id,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0,
+                    )
+                text, model = response.choices[0].message.content or "", self.chat_model_id
+                usage = response.usage
+                tokens_in = usage.prompt_tokens if usage else 0
+                tokens_out = usage.completion_tokens if usage else 0
+            self.usage += Usage(1, tokens_in, tokens_out, price(model, tokens_in, tokens_out), time.perf_counter() - start)
+            return _strip_fences(text) if json_mode else text
 
     def _chat_anthropic(self, prompt: str) -> tuple[str, str, int, int]:
         # Claude Opus 5.5: thinking is always on and sampling params are removed; effort is the cost lever.
