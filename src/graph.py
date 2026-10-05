@@ -95,6 +95,8 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", folded).strip("-")[:60]
 
 # Canonical name -> the surface forms seen in law text or in news prose.
+# The key IS the node name written by find_substances() on the law side, so both KBs MERGE onto
+# the same Substance. Lowercase cần sa / thuốc phiện / côca are exactly what SUBSTANCES contains.
 SUBSTANCE_ALIASES = {
     "Heroine": ["heroine", "heroin"],
     "Cocaine": ["cocaine", "côcain", "cô ca"],
@@ -103,9 +105,9 @@ SUBSTANCE_ALIASES = {
     "MDMA": ["mdma", "m.d.m.a"],
     "XLR-11": ["xlr-11", "xlr11"],
     "Ketamine": ["ketamine", "ketamin", "keta"],
-    "Cannabis": ["cần sa", "can sa", "cây cần sa"],
-    "Opium": ["thuốc phiện", "thuoc phien", "opium"],
-    "CocaLeaf": ["côca", "coca", "lá côca", "la coca"],
+    "cần sa": ["cần sa", "can sa", "cây cần sa", "cannabis", "marijuana"],
+    "thuốc phiện": ["thuốc phiện", "thuoc phien", "opium", "opiat"],
+    "côca": ["côca", "coca", "lá côca", "la coca", "coca leaf"],
 }
 
 def canonical_substance(name: str) -> str:
