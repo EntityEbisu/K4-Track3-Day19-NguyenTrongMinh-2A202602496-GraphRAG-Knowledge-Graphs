@@ -53,14 +53,27 @@ CHARGED_WITH 6, DEFINES 2). Phải thấy đủ node/cạnh trên đường đi.
 
 Người đã chọn: **Dương Minh Tuấn (biệt danh "Hoàng Nato")** — khác `Lê Minh Thành` như yêu cầu.
 
+> **LƯU Ý QUAN TRỌNG — dạng query hoạt động.** Câu trong `LAB_GUIDE.md` 8.1 viết
+> `... WHERE p.name = 'Lê Minh Thành' ... RETURN p` **bị lỗi** trên Neo4j 5:
+> `Type mismatch: ... but was Path`. Nguyên nhân: **không lọc `WHERE` trên một path đã đặt tên**,
+> và `OPTIONAL MATCH q=(k)-...` cũng lỗi vì trả về path thứ hai. Dạng dưới đây đã chạy thật, không lỗi:
+> gom người vào biến trước, rồi mới trả path.
+
 ```cypher
-MATCH p=(:Person)-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)
-WHERE p.name = 'Dương Minh Tuấn'
-OPTIONAL MATCH q=(k)-[:INVOLVES|LOCATED_IN]->()
-RETURN p, q;
+MATCH (person:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]->(:Article)
+WHERE person.name = 'Dương Minh Tuấn'
+WITH collect(DISTINCT person) AS ps
+MATCH p=(person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]->(:Article)
+RETURN p, ps LIMIT 12
 ```
 
-Phải thấy đường đi **người → vụ → tội → Điều luật** (Điều 255 BLHS), kèm chất/địa điểm của vụ.
+Kết quả thật (đã dùng để chụp ảnh): Nodes 22 (Person 11, Case 5, Crime 3, Article 3),
+Relationships 19 (INVOLVED_IN 10, CHARGED_WITH 6, DEFINES 3). Đường đi đi tới **Điều 255 BLHS**
+và **Điều 251 BLHS**.
+
+> Lưu ý chung: query trả **Path** thì Neo4j Browser mở tab **Graph** và hiện **Results overview**.
+> Query chỉ trả về số/đoạn n�� (như Q-A) thì chỉ có tab **Table**, **không có** Results overview.
+> Đó là lý do Q-B và Q-D (ảnh 2, ảnh 3) có bảng đếm, còn ảnh 1 (Q-A) là bảng số đếm node.
 
 ---
 
@@ -72,5 +85,5 @@ Lưu đúng tên file vào `report/img/`:
 - `kg_cross_kb.png`
 - `kg_my_case.png`
 
-Kiểm tra nhanh: mở từng ảnh, xác nhận **thấy ô truy vấn** + **thấy Results overview** + **không bị
-tour che**. Rồi chạy lại phần tự kiểm ở mục 5 của `REPORT_KG.md`.
+Kiểm tra nhanh: mở từng ảnh, xác nhận **thấy ô truy vấn**, **không có lỗi đỏ**, và với ảnh 2/3 thấy
+**Results overview**. Rồi chạy lại phần tự kiểm ở mục 5 của `REPORT_KG.md`.

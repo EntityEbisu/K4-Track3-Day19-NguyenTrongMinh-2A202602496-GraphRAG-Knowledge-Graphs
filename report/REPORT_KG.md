@@ -94,7 +94,7 @@ Bằng chứng đầy đủ: `report/img/error_evidence.txt`, sinh bằng `scrip
 
 - **Hiện tượng:** `Substance` có **18 node** nhưng phía luật chỉ dùng 10 tên. Tên do LLM đặt ở phía
   tin tạo ra node mới không khớp node luật, nên cùng một chất bị đếm ở nhiều chỗ.
-- **Bằng chứng** (`scripts/error_evidence.py`, mục E3):
+- **Bằng chứng:** (`scripts/error_evidence.py`, mục E3 — xem `report/img/error_evidence.txt`):
 
 ```cypher
 MATCH (s:Substance) RETURN s.name AS name,
@@ -153,7 +153,7 @@ MATCH (p:Person) RETURN p.name AS name, p.aliases AS aliases,
 - **Hiện tượng:** ở Q4, GraphRAG trả lời về **hai** tội danh (`tổ chức sử dụng` **và** `mua bán`),
   trong khi đáp án chuẩn chỉ có `tổ chức sử dụng`. Ở Q2, GraphRAG chỉ nêu `Trần Thanh Tuấn`, bỏ sót
   `Trần Minh Tâm`.
-- **Bằng chứng** — trích nguyên văn từ `ket_qua_benchmark_kg.txt`:
+- **Bằng chứng:** trích nguyên văn từ `ket_qua_benchmark_kg.txt`:
 
 ```
 --- Q4 [cross-kb] graph recall=0.67 judge=1 16.56s
