@@ -68,8 +68,58 @@ def find_substances(text: str) -> list[str]:
     return [name for name in SUBSTANCES if name.lower() in lowered]
 
 # ----------------------------------------------------------------------------------------------
-# HINT — suggested ontology: extraction helpers
-# ----------------------------------------------------------------------------------------------
+# Custom ontology (Nguyen Trong Minh): Case keyed by (doc_id, slug) + Substance alias table +
+# explicit PenaltyThreshold nodes. See report/ONTOLOGY.md.
+#
+#   (:Article {id, title, law, doc_id})-[:DEFINES]->(:Crime {name})
+#   (:Article)-[:HAS_CLAUSE]->(:Clause {id, number, penalty, text, doc_id})-[:MENTIONS]->(:Substance {name, canonical})
+#   (:Clause)-[:SETS_THRESHOLD]->(:Threshold {id, substance, min_g, max_g, text, doc_id})
+#   (:Case {key, name, summary, date, doc_id})-[:CHARGED_WITH]->(:Crime)
+#   (:Case)-[:INVOLVES {amount}]->(:Substance)
+#   (:Case)-[:LOCATED_IN]->(:Location {name})
+#   (:Person {name, aliases})-[:INVOLVED_IN {role, charge, sentence}]->(:Case)
+#
+# Why this differs from the suggestion (see ONTOLOGY.md §7):
+#   1. `Case.key = doc_id + "#" + index` instead of an LLM-invented name. Measured: with the hint
+#      key, a 4B model invented "Vụ mua bán 36kg ma túy tại TP.HCM" for an article containing
+#      neither "36kg" nor "TP.HCM" — an unstable MERGE key, i.e. the E3 duplicate-entity bug.
+#   2. `Substance.canonical` + SUBSTANCE_ALIASES merges synonyms (ketamine/ketamin/"K") so law-side
+#      and news-side mentions collapse onto ONE node; the hint schema cannot merge them.
+#   3. `Threshold` nodes model the statutory mass cut-offs, so Q5 ("MDMA >= 100g -> khoản 4") is a
+#      graph join instead of a keyword match. The hint schema stores thresholds only as free text.
+
+def _slug(text: str) -> str:
+    """ASCII-ish slug; Vietnamese diacritics collapse so the key is stable across model runs."""
+    folded = (text.replace("đ", "d").replace("Đ", "D")
+              .encode("ascii", "ignore").decode("ascii").lower())
+    return re.sub(r"[^a-z0-9]+", "-", folded).strip("-")[:60]
+
+# Canonical name -> the surface forms seen in law text or in news prose.
+SUBSTANCE_ALIASES = {
+    "Heroine": ["heroine", "heroin"],
+    "Cocaine": ["cocaine", "côcain", "cô ca"],
+    "Methamphetamine": ["methamphetamine", "methamphetamin", "meth"],
+    "Amphetamine": ["amphetamine", "amfetamin"],
+    "MDMA": ["mdma", "m.d.m.a"],
+    "XLR-11": ["xlr-11", "xlr11"],
+    "Ketamine": ["ketamine", "ketamin", "keta"],
+    "Cannabis": ["cần sa", "can sa", "cây cần sa"],
+    "Opium": ["thuốc phiện", "thuoc phien", "opium"],
+    "CocaLeaf": ["côca", "coca", "lá côca", "la coca"],
+}
+
+def canonical_substance(name: str) -> str:
+    """Map any surface form onto one canonical Substance name (empty string when unknown)."""
+    lowered = name.strip().lower()
+    if not lowered:
+        return ""
+    for canonical, aliases in SUBSTANCE_ALIASES.items():
+        if lowered == canonical.lower() or any(a in lowered for a in aliases):
+            return canonical
+    return ""
+
+# Kinds used to tell a real offence apart from procedural/administrative articles.
+CRIME_PREFIX = "tội "
 
 def parse_law_article(doc: Document) -> dict[str, Any]:
     """Deterministic (regex) extraction for one 'Điều' — law text is regular enough to skip the LLM."""
@@ -89,6 +139,7 @@ def parse_law_article(doc: Document) -> dict[str, Any]:
             "penalty": penalty.group(1).rstrip(".") if penalty else "",
             "text": text,
             "substances": find_substances(text),
+            "thresholds": parse_thresholds(text, article_id, int(start.group(1))),
         })
     return {
         "id": article_id,
@@ -99,23 +150,100 @@ def parse_law_article(doc: Document) -> dict[str, Any]:
         "clauses": clauses,
     }
 
-NEWS_EXTRACTION_PROMPT = """Bạn trích xuất knowledge graph từ một bài báo tiếng Việt về ma túy.
-Chỉ dùng thông tin có trong bài. Trả về JSON đúng dạng:
-{{"cases": [{{
-  "name": "tên ngắn của vụ việc, ví dụ: Vụ mua bán 36kg ma túy tại TP.HCM",
-  "summary": "1-2 câu tóm tắt",
-  "date": "ngày xảy ra/xét xử nếu có, dạng YYYY-MM-DD hoặc chuỗi rỗng",
-  "location": "tỉnh/thành phố, chuỗi rỗng nếu không rõ",
-  "charges": ["tội danh, BẮT BUỘC chọn đúng nguyên văn từ DANH SÁCH TỘI DANH"],
-  "substances": [{{"name": "tên chất, dùng tên chuẩn trong DANH SÁCH CHẤT nếu khớp", "amount": "khối lượng nếu có"}}],
-  "people": [{{"name": "họ tên", "aliases": ["biệt danh"], "role": "bị cáo|bị can|nghi phạm|người liên quan|cán bộ",
-               "charge": "tội danh của người này (từ DANH SÁCH TỘI DANH) hoặc chuỗi rỗng",
-               "sentence": "mức án nếu có, ví dụ: tử hình, 8 năm tù"}}]
-}}]}}
-Bài không nói về vụ việc cụ thể (tuyên truyền, hội nghị...) thì trả về {{"cases": []}}.
+# "… có khối lượng từ 100 gam trở lên", "từ 0,1 gam đến dưới 05 gam", "từ 05 gam đến dưới 30 gam".
+# The connector "từ" is optional: Điều 250 khoản 4 reads "có khối lượng 100 gam trở lên" (no "từ").
+MASS_UNITS = {"gam": 1.0, "g": 1.0, "kilôgam": 1000.0, "kg": 1000.0, "tấn": 1_000_000.0}
+_NUMBER = r"\d+(?:[.,]\d+)?"
+_UNIT = r"(gam|kg|kilôgam|g|tấn)"
+_THRESHOLD_RANGE = re.compile(
+    rf"khối lượng\s+(?:từ\s+)?({_NUMBER})\s*{_UNIT}\s+đến\s+dưới\s+({_NUMBER})\s*{_UNIT}")
+_THRESHOLD_MIN = re.compile(rf"khối lượng\s+(?:từ\s+)?({_NUMBER})\s*{_UNIT}\s+trở lên")
 
-DANH SÁCH TỘI DANH: {crimes}
-DANH SÁCH CHẤT: {substances}
+def _to_grams(value: str, unit: str) -> float:
+    return float(value.replace(",", ".")) * MASS_UNITS[unit.lower()]
+
+def parse_thresholds(clause_text: str, article_id: str, clause_number: int) -> list[dict[str, Any]]:
+    """Pull the statutory mass cut-offs out of one clause so Q5 can be answered by a join.
+
+    Scoped per LINE, not per clause: a clause holds several lettered points and each point names its
+    own substances, e.g. Điều 250 khoản 4 point b) is
+    "Heroine, Cocaine, Methamphetamine, Amphetamine, MDMA hoặc XLR-11 có khối lượng 100 gam trở lên"
+    — one cut-off, six substances. Matching on the whole clause would attach every cut-off to the
+    clause's first substance only and silently lose MDMA.
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in clause_text.splitlines():
+        ranges = _THRESHOLD_RANGE.findall(line)
+        mins = _THRESHOLD_MIN.findall(line)
+        if not ranges and not mins:
+            continue
+        spans = [(m.start(), m.end()) for m in
+                 list(_THRESHOLD_RANGE.finditer(line)) + list(_THRESHOLD_MIN.finditer(line))]
+        # Only substances mentioned before the cut-off share it.
+        head = line[:min(start for start, _ in spans)] if spans else line
+        substances = find_substances(head)
+        for match in _THRESHOLD_RANGE.finditer(line):
+            lo = _to_grams(match.group(1), match.group(2))
+            hi = _to_grams(match.group(3), match.group(4))
+            for substance in substances:
+                key = f"{substance}|{lo}|{hi}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({
+                    "id": f"{article_id} khoản {clause_number} | {substance} | {lo:g}-{hi:g}g",
+                    "substance": substance,
+                    "min_g": lo,
+                    "max_g": hi,
+                    "text": match.group(0),
+                })
+        for match in _THRESHOLD_MIN.finditer(line):
+            lo = _to_grams(match.group(1), match.group(2))
+            for substance in substances:
+                key = f"{substance}|{lo}|inf"
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({
+                    "id": f"{article_id} khoản {clause_number} | {substance} | {lo:g}g+",
+                    "substance": substance,
+                    "min_g": lo,
+                    "max_g": None,
+                    "text": match.group(0),
+                })
+    return out
+
+# Placeholders are deliberately UNQUOTED. With the starter prompt's quoted placeholders a 4B model
+# copies the instruction text into the JSON ("charges": ["tội danh","BẮT BUỘC"]), which link_entity
+# then correctly drops to None -> no CHARGED_WITH edge -> the bridge node never forms.
+NEWS_EXTRACTION_PROMPT = """Trích xuất knowledge graph từ bài báo tiếng Việt về ma túy.
+Chỉ dùng thông tin có trong bài. Không suy đoán, không bổ sung chi tiết ngoài bài.
+
+Trả về DUY NHẤT một object JSON đúng shape sau, giữ nguyên tên key:
+{
+  "cases": [
+    {
+      "name": <tên ngắn gọn mô tả vụ việc; chỉ dùng chi tiết CÓ TRONG BÀI>,
+      "summary": <tóm tắt 1-2 câu>,
+      "date": <YYYY-MM-DD hoặc chuỗi rỗng>,
+      "location": <tỉnh/thành hoặc chuỗi rỗng>,
+      "charges": [<mỗi tội danh, chép NGUYÊN VĂN từ danh sách hợp lệ bên dưới>],
+      "substances": [{"name": <tên chất>, "amount": <khối lượng nếu bài có nêu>}] ,
+      "people": [{"name": <họ tên>, "aliases": [<biệt danh nếu có>], "role": <bị cáo|bị can|nghi phạm|người liên quan>,
+                  "charge": <tội danh chép nguyên văn hoặc chuỗi rỗng>, "sentence": <mức án>}]
+    }
+  ]
+}
+
+DANH SÁCH TỘI DANH HỢP LỆ — chỉ được dùng đúng các chuỗi này, viết thường, KHÔNG thêm tiền tố "Tội":
+{crimes}
+
+DANH SÁCH CHẤT HỢP LỆ: {substances}
+
+Nếu bài có nhiều vụ việc riêng biệt, tách thành nhiều phần tử trong cases.
+Nếu bài không nói về vụ án cụ thể, trả về {{"cases": []}}.
+Chỉ trả về JSON, không thêm chữ nào khác.
 
 Tiêu đề: {title}
 Nội dung:
@@ -124,7 +252,7 @@ Nội dung:
 def extract_news_cases(doc: Document, llm_fn: Callable[[str], str], known_crimes: list[str]) -> list[dict]:
     """LLM extraction for one news article; charges are re-linked to law-KB crimes in code."""
     prompt = NEWS_EXTRACTION_PROMPT.format(
-        crimes="; ".join(known_crimes), substances=", ".join(SUBSTANCES),
+        crimes="\n  - ".join(known_crimes), substances=", ".join(SUBSTANCES),
         title=doc.metadata.get("title", ""), content=doc.content[:12000],
     )
     try:
@@ -135,6 +263,11 @@ def extract_news_cases(doc: Document, llm_fn: Callable[[str], str], known_crimes
         case["charges"] = sorted({c for c in (link_entity(x, known_crimes) for x in case.get("charges", [])) if c})
         for person in case.get("people", []):
             person["charge"] = link_entity(person.get("charge") or "", known_crimes) or ""
+        # Substance surface forms collapse onto the canonical law-side node name.
+        for substance in case.get("substances", []):
+            canonical = canonical_substance(str(substance.get("name", "")))
+            substance["name"] = canonical or substance.get("name", "")
+        case["substances"] = [s for s in case.get("substances", []) if s.get("name")]
     return cases
 
 # ----------------------------------------------------------------------------------------------
