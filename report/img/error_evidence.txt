@@ -1,0 +1,159 @@
+# Graph hiện tại: 435 node / 853 cạnh
+
+==============================================================================
+E1 — Cases with no bridge to the law KB
+------------------------------------------------------------------------------
+MATCH (k:Case) WHERE NOT (k)-[:CHARGED_WITH]->() RETURN k.key AS key, k.name AS name, k.doc_id AS doc_id ORDER BY k.doc_id
+    {'key': 'news-100260924105118645#2', 'name': 'Vụ án của DJ Thái Hoàng', 'doc_id': 'news-100260924105118645'}
+    {'key': 'news-100260924105118645#3', 'name': 'Vụ án tuyển dụng trái quy định tại Viện Pháp y tâm thần Trung ương', 'doc_id': 'news-100260924105118645'}
+
+==============================================================================
+E1b — how many cases DO bridge
+------------------------------------------------------------------------------
+MATCH (k:Case)-[:CHARGED_WITH]->(c:Crime) RETURN count(*) AS bridged_cases
+    {'bridged_cases': 31}
+
+==============================================================================
+E2 — MDMA mass ladder actually stored (Q5)
+------------------------------------------------------------------------------
+MATCH (cl:Clause)-[:SETS_THRESHOLD]->(t:Threshold) WHERE t.substance = 'MDMA' AND cl.id STARTS WITH 'Điều 250' RETURN cl.number AS khoan, t.min_g AS min_g, t.max_g AS max_g,        cl.penalty AS penalty ORDER BY t.min_g
+    {'khoan': 1, 'min_g': 0.1, 'max_g': 5.0, 'penalty': 'phạt tù từ 02 năm đến 07 năm'}
+    {'khoan': 2, 'min_g': 5.0, 'max_g': 30.0, 'penalty': 'phạt tù từ 07 năm đến 15 năm'}
+    {'khoan': 3, 'min_g': 30.0, 'max_g': 100.0, 'penalty': 'phạt tù từ 15 năm đến 20 năm'}
+    {'khoan': 4, 'min_g': 100.0, 'max_g': None, 'penalty': 'phạt tù 20 năm, tù chung thân hoặc tử hình'}
+
+==============================================================================
+E2b — thresholds the law text mentions but the parser could not bind to a substance
+------------------------------------------------------------------------------
+MATCH (cl:Clause)-[:SETS_THRESHOLD]->(t:Threshold) RETURN count(*) AS total_thresholds
+    {'total_thresholds': 221}
+
+==============================================================================
+E3 — Substance nodes (alias merging check)
+------------------------------------------------------------------------------
+MATCH (s:Substance) RETURN s.name AS name,        count { (s)<-[:MENTIONS]-() } AS mentioned_by_law,        count { (s)<-[:INVOLVES]-() }  AS used_by_news ORDER BY name
+    {'name': 'Amphetamine', 'mentioned_by_law': 18, 'used_by_news': 0}
+    {'name': 'Cocaine', 'mentioned_by_law': 18, 'used_by_news': 3}
+    {'name': 'Heroine', 'mentioned_by_law': 18, 'used_by_news': 0}
+    {'name': 'Ketamine', 'mentioned_by_law': 0, 'used_by_news': 8}
+    {'name': 'MDMA', 'mentioned_by_law': 18, 'used_by_news': 7}
+    {'name': 'Methamphetamine', 'mentioned_by_law': 18, 'used_by_news': 5}
+    {'name': 'Nước vui', 'mentioned_by_law': 0, 'used_by_news': 1}
+    {'name': 'XLR-11', 'mentioned_by_law': 18, 'used_by_news': 0}
+    {'name': 'côca', 'mentioned_by_law': 20, 'used_by_news': 0}
+    {'name': 'cần sa', 'mentioned_by_law': 20, 'used_by_news': 0}
+    {'name': 'etomidate', 'mentioned_by_law': 0, 'used_by_news': 3}
+    {'name': 'ma túy', 'mentioned_by_law': 0, 'used_by_news': 3}
+    {'name': 'ma túy tổng hợp', 'mentioned_by_law': 0, 'used_by_news': 2}
+    {'name': 'need sa', 'mentioned_by_law': 0, 'used_by_news': 2}
+    {'name': 'pod chill', 'mentioned_by_law': 0, 'used_by_news': 1}
+    {'name': 'rượu', 'mentioned_by_law': 0, 'used_by_news': 1}
+    {'name': 'thuốc lắc', 'mentioned_by_law': 0, 'used_by_news': 1}
+    {'name': 'thuốc phiện', 'mentioned_by_law': 21, 'used_by_news': 0}
+
+==============================================================================
+E3b — Person nodes keyed by LLM-invented name
+------------------------------------------------------------------------------
+MATCH (p:Person) RETURN p.name AS name, p.aliases AS aliases,        count { (p)-[:INVOLVED_IN]->() } AS cases ORDER BY name
+    {'name': 'Bùi Thị Thanh Thủy', 'aliases': [], 'cases': 1}
+    {'name': 'Cao Thị Bích Hằng', 'aliases': [], 'cases': 1}
+    {'name': 'Cái Quang Huy', 'aliases': [], 'cases': 3}
+    {'name': 'DJ Thái Hoàng', 'aliases': [], 'cases': 1}
+    {'name': 'Dương Minh Tuấn', 'aliases': [], 'cases': 3}
+    {'name': 'Giang Quốc Khánh', 'aliases': [], 'cases': 1}
+    {'name': 'Hoàng Nato', 'aliases': [], 'cases': 1}
+    {'name': 'Kim Xuân Tuấn', 'aliases': [], 'cases': 1}
+    {'name': 'Kim Yu Young', 'aliases': [], 'cases': 1}
+    {'name': 'Lê Minh Thành', 'aliases': [], 'cases': 1}
+    {'name': 'Lê Văn Đông', 'aliases': [], 'cases': 2}
+    {'name': 'Lê Đăng Khoa', 'aliases': [], 'cases': 1}
+    {'name': 'Nguyên Thị Mai Anh', 'aliases': [], 'cases': 1}
+    {'name': 'Nguyễn Minh Nhân', 'aliases': [], 'cases': 1}
+    {'name': 'Nguyễn Quang Hưng', 'aliases': [], 'cases': 1}
+    {'name': 'Nguyễn Thành Quốc', 'aliases': [], 'cases': 1}
+    {'name': 'Nguyễn Thị Mai Anh', 'aliases': [], 'cases': 2}
+    {'name': 'Nguyễn Thị Thu Hoài', 'aliases': [], 'cases': 1}
+    {'name': 'Nguyễn Tiến Đạt', 'aliases': [], 'cases': 3}
+    {'name': 'Nguyễn Văn Quang', 'aliases': [], 'cases': 1}
+    {'name': 'Ngô Việt Dũng', 'aliases': [], 'cases': 1}
+    {'name': 'Phan Kim Nhi', 'aliases': ['Phannhibeauty'], 'cases': 3}
+    {'name': 'Phạm Minh Sang', 'aliases': [], 'cases': 1}
+    {'name': 'Phạm Phương Anh', 'aliases': [], 'cases': 1}
+    {'name': 'Phạm Tài Vình', 'aliases': [], 'cases': 1}
+    {'name': 'Trần Minh Tâm', 'aliases': [], 'cases': 1}
+    {'name': 'Trần Ngọc Nam', 'aliases': [], 'cases': 1}
+    {'name': 'Trần Ngọc Thảo', 'aliases': [], 'cases': 1}
+    {'name': 'Trần Quốc An', 'aliases': [], 'cases': 2}
+    {'name': 'Trần Thanh Tuấn', 'aliases': [], 'cases': 1}
+    {'name': 'Trần Văn Trường', 'aliases': [], 'cases': 1}
+    {'name': 'Trịnh Vũ Kiên', 'aliases': [], 'cases': 1}
+    {'name': 'Võ Nữ Minh Thư', 'aliases': [], 'cases': 1}
+    {'name': 'công dân Trung Quốc', 'aliases': [], 'cases': 1}
+    {'name': 'Đinh Đức Tuấn', 'aliases': [], 'cases': 1}
+    {'name': 'Đoàn Văn Thưởng', 'aliases': [], 'cases': 1}
+    {'name': 'Đỗ Thị Ngọc Yến', 'aliases': [], 'cases': 1}
+    {'name': 'Đỗ Trần Cường', 'aliases': [], 'cases': 1}
+
+==============================================================================
+E5 — cross-KB path for the Q3 case, straight from Cypher
+------------------------------------------------------------------------------
+MATCH (p:Person {name:'Lê Minh Thành'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(c:Crime)<-[:DEFINES]-(a:Article) RETURN p.name AS person, k.name AS case, c.name AS crime, a.id AS article,        k.summary AS summary
+    {'person': 'Lê Minh Thành', 'case': "Góp 14 triệu đồng mua ma túy rồi nói đã 'rút lui'", 'crime': 'mua bán trái phép chất ma túy', 'article': 'Điều 251 BLHS', 'summary': 'Ba thanh niên Trịnh Vũ Kiên, Kim Xuân Tuấn, Nguyễn Quang Hưng góp tiền để Lê Minh Thành mua ma túy dùng trong tiệc sinh nhật, nhưng sau khi chuyển tiền, họ không tiếp tục sử dụng và cho rằng Thành đã dùng số tiền này vào mục đích cá nhân. Tòa sơ thẩm xác định ba bị cáo là đồng phạm giúp sức cho Thành về tội mua bán trái phép chất ma túy.'}
+
+==============================================================================
+E5b — what the graph says about Q4 (Hoàng Nato)
+------------------------------------------------------------------------------
+MATCH (p:Person)-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(c:Crime)<-[:DEFINES]-(a:Article) WHERE any(al IN coalesce(p.aliases, []) WHERE toLower(al) CONTAINS 'nato') RETURN p.name AS person, p.aliases AS aliases, c.name AS crime, a.id AS article
+  (không có dòng nào)
+
+==============================================================================
+E6 — INVOLVED_IN edges with an empty charge
+------------------------------------------------------------------------------
+MATCH (p:Person)-[r:INVOLVED_IN]->(k:Case) WHERE coalesce(r.charge, '') = '' RETURN p.name AS person, r.role AS role, r.sentence AS sentence, k.name AS case
+    {'person': 'Cái Quang Huy', 'role': 'bị can', 'sentence': '', 'case': 'Chủ quán bar F1 chuyển đổi kinh doanh sang mua bán ma túy'}
+    {'person': 'Nguyễn Tiến Đạt', 'role': 'người liên quan', 'sentence': '', 'case': 'Chủ quán bar F1 chuyển đổi kinh doanh sang mua bán ma túy'}
+    {'person': 'Trần Văn Trường', 'role': 'cựu viện trưởng', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Nguyễn Văn Quang', 'role': 'bác sĩ', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Đỗ Trần Cường', 'role': 'bác sĩ', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Nguyên Thị Mai Anh', 'role': 'nghi phạm', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Lê Văn Đông', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Trần Quốc An', 'role': 'điều dưỡng', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Đoàn Văn Thưởng', 'role': 'điều tra viên', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Nguyễn Thị Thu Hoài', 'role': 'phó trưởng phòng tổ chức cán bộ', 'sentence': '', 'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương'}
+    {'person': 'Bùi Thị Thanh Thủy', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án của Bùi Thị Thanh Thủy'}
+    {'person': 'DJ Thái Hoàng', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án của DJ Thái Hoàng'}
+    {'person': 'Nguyễn Thị Mai Anh', 'role': 'môi giới', 'sentence': '', 'case': 'Vụ án của DJ Thái Hoàng'}
+    {'person': 'Dương Minh Tuấn', 'role': 'bị can', 'sentence': '', 'case': 'Hoàng Nato'}
+    {'person': 'Phan Kim Nhi', 'role': 'người liên quan', 'sentence': '', 'case': 'Hoàng Nato'}
+    {'person': 'Trần Ngọc Nam', 'role': 'bị can', 'sentence': '', 'case': 'Vụ tông cảnh sát giao thông ở An Giang'}
+    {'person': 'Nguyễn Minh Nhân', 'role': 'bị can', 'sentence': '', 'case': 'Vụ tông cảnh sát giao thông ở An Giang'}
+    {'person': 'Lê Văn Đông', 'role': 'nghi phạm', 'sentence': '', 'case': 'Vụ án tổ chức sử dụng ma túy tại bãi biển Sầm Sơn'}
+    {'person': 'Ngô Việt Dũng', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án tổ chức sử dụng ma túy tại bãi biển Sầm Sơn'}
+    {'person': 'Cao Thị Bích Hằng', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án tổ chức sử dụng ma túy tại bãi biển Sầm Sơn'}
+    {'person': 'Trần Quốc An', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án tổ chức sử dụng ma túy tại bãi biển Sầm Sơn'}
+    {'person': 'Nguyễn Thị Mai Anh', 'role': 'bị can', 'sentence': '', 'case': 'Vụ án tổ chức sử dụng ma túy tại bãi biển Sầm Sơn'}
+
+==============================================================================
+E6b — INVOLVES edges with an empty amount
+------------------------------------------------------------------------------
+MATCH (k:Case)-[r:INVOLVES]->(s:Substance) WHERE coalesce(r.amount, '') = '' RETURN k.name AS case, s.name AS substance
+    {'case': 'Chủ quán bar F1 chuyển đổi kinh doanh sang mua bán ma túy', 'substance': 'Ketamine'}
+    {'case': 'Chủ quán bar F1 chuyển đổi kinh doanh sang mua bán ma túy', 'substance': 'MDMA'}
+    {'case': 'Tổ chức sử dụng trái phép chất ma túy', 'substance': 'ma túy tổng hợp'}
+    {'case': 'Tổ chức sử dụng trái phép chất ma túy', 'substance': 'Ketamine'}
+    {'case': 'Tổ chức sử dụng trái phép chất ma túy', 'substance': 'etomidate'}
+    {'case': 'Tổ chức sử dụng trái phép chất ma túy', 'substance': 'thuốc lắc'}
+    {'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương', 'substance': 'MDMA'}
+    {'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương', 'substance': 'Cocaine'}
+    {'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương', 'substance': 'Ketamine'}
+    {'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương', 'substance': 'need sa'}
+    {'case': 'Vụ án thao túng giám định tâm thần tại Viện Pháp y tâm thần Trung ương', 'substance': 'Methamphetamine'}
+    {'case': 'Vụ án của Bùi Thị Thanh Thủy', 'substance': 'Ketamine'}
+    {'case': 'Vụ án của Bùi Thị Thanh Thủy', 'substance': 'need sa'}
+    {'case': 'Vụ án của Bùi Thị Thanh Thủy', 'substance': 'Methamphetamine'}
+    {'case': 'Vụ án của Bùi Thị Thanh Thủy', 'substance': 'MDMA'}
+    {'case': 'Vụ án của DJ Thái Hoàng', 'substance': 'Methamphetamine'}
+    {'case': 'Vụ án của DJ Thái Hoàng', 'substance': 'Cocaine'}
+    {'case': 'Vụ tông cảnh sát giao thông ở An Giang', 'substance': 'rượu'}
+    {'case': 'Vụ tông cảnh sát giao thông ở An Giang', 'substance': 'ma túy'}
+
