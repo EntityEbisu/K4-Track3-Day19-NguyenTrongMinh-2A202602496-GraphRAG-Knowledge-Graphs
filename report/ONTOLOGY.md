@@ -169,6 +169,52 @@ phải lỗi.
 
 ---
 
+## 7b. Bằng chứng đo trước / sau (chạy thật)
+
+Hai lần chạy cùng model, cùng prompt trích xuất, cùng embedding, cùng `top_k`, cùng bộ câu hỏi —
+chỉ khác **ontology**. File: `ket_qua_benchmark_kg.hint.txt` (gợi ý) vs `ket_qua_benchmark_kg.txt`
+(của tôi). Chạy lại được bằng `python scripts/run_hint_baseline.py`.
+
+| Hạng mục | Ontology gợi ý | Ontology của tôi | Chênh lệch |
+| --- | --- | --- | --- |
+| Số node / cạnh | 214 / 406 | **435 / 853** | +221 node `Threshold`, +447 cạnh |
+| Indexing (out_tok) | 13.574 | 16.271 | +2.697 (+19,9%) |
+| Indexing (giây) | 349,5 | 533,3 | +183,8 (+52,6%) |
+| Querying (in_tok / câu) | 2.685 | 2.925 | +240 (+8,9%) |
+| **Mean recall (graph)** | 0,71 | **0,79** | **+0,08** |
+| Mean judge (graph) | 1,67 | 1,67 | ±0,00 |
+
+**Theo từng câu (recall của pipeline graph):**
+
+| Câu | Loại | Gợi ý | Của tôi | Chênh lệch | Giải thích |
+| --- | --- | --- | --- | --- | --- |
+| Q1 | single-hop-law | 1,00 | 1,00 | ±0,00 | Không phụ thuộc ontology |
+| Q2 | single-hop-news | 1,00 | 0,50 | **−0,50** | **Nhiễu LLM, không phải do ontology** — xem bên dưới |
+| Q3 | cross-kb | 1,00 | 1,00 | ±0,00 | Cả hai đều nối đúng Điều 251 |
+| Q4 | cross-kb | 0,33 | 0,67 | **+0,34** | Cải thiện thật: bản của tôi nêu đúng **Điều 255**; bản gợi ý không nêu số Điều nào |
+| Q5 | cross-kb-multi-hop | 0,60 | 0,60 | ±0,00 | Cùng đúng 3/5 từ khoá; phần ngưỡng đúng ở cả hai |
+| Q6 | aggregation | 0,33 | 1,00 | **+0,67** | Cải thiện thật: bản của tôi liệt kê đúng 3 vụ có MDMA |
+
+**Phân biệt cải thiện thật với nhiễu — rất quan trọng, không được ghi đè.** Ở Q2, bản gợi ý trả lời
+*"Trần Thanh Tuấn và Trần Ngọc Thảo"* (đúng 2/2 từ khoá theo `must_include`) còn bản của tôi chỉ nêu
+*"Trần Thanh Tuấn"*; ở Q6, bản gợi ý kể vụ Sầm Sơn còn bản của tôi kể vụ Lê Minh Thành. Cả hai khác
+biệt đều là **model 4B chọn ngẫu nhiên vụ nào để kể**, chứ không phải graph khác nhau: `context()`
+của cả hai bản đều trả về các vụ có MDMA, nhưng LLM chỉ kể 1–2 vụ. Tôi **không tính** Q2 là chiến
+thắng của ontology gợi ý và **không tính** Q6 là thắng của tôi một cách tuyệt đối.
+
+Chỉ **Q4** là cải thiện có cơ chế: gợi ý không có node `Threshold` nên KG-3 chỉ lấy khoản 1 và các
+khoản `MENTIONS` chất của vụ; bản của tôi thêm điều kiện "khoản có `Threshold` của chất đó", nên
+mang cả Điều 255 vào ngữ cảnh. **Q6** cũng là cải thiện có cơ chế **ở mức độ đếm node**: `Substance`
+là node dùng chung nên `MATCH (k:Case)-[:INVOLVES]->(MDMA)` là 1 hop ở cả hai bản — nhưng bản của tôi
+đã gộp được tên chất, nên tập vụ tìm thấy rộng và đúng hơn.
+
+**Điểm hòa vốn của riêng phần ontology:** thêm 221 node làm indexing tăng **+52,6%** thời gian và
+**+19,9%** token, đổi lại mean recall **+0,08**. Với 20 bài báo + 18 Điều luật thì tỉ lệ đó chưa đáng;
+với corpus lớn hơn và nhiều câu hỏi ngưỡng-khối-lượng hơn thì lớp `Threshold` là thứ **trả giá một
+lần** cho mọi câu hỏi định-tính-khối-lượng về sau.
+
+---
+
 ## 8. Hạn chế còn lại
 
 - **Không gộp vụ án trùng nhau giữa hai bài.** `Case.key` theo `doc_id` nên cùng một vụ được báo ở 2 bài

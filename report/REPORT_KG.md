@@ -71,6 +71,11 @@ token, tức chỉ **33%** context 10.752 token của model — **không** phả
 | Q5 | cross-kb-multi-hop | 0.40 / 0 | **0.60 / 2** | **Graph** | Ngưỡng MDMA ≥100g → khoản 4 nhờ join `Threshold`, Flat không dò được |
 | Q6 | aggregation | 0.33 / 1 | **1.00 / 2** | **Graph** | `Substance` là node dùng chung nên đếm vụ MDMA chỉ 1 hop |
 
+**Đối chiếu với ontology gợi ý** (`ket_qua_benchmark_kg.hint.txt`, cùng model + cùng prompt):
+mean recall của pipeline graph là **0,71** so với **0,79** của bản tôi. Bảng chi tiết từng câu và
+phân biệt cải thiện thật với nhiễu LLM nằm ở `report/ONTOLOGY.md` mục 7b — Q2 và Q6 dao động do
+model 4B chọn ngẫu nhiên vụ để kể, **không** phải do khác biệt ontology.
+
 **Quy luật.** GraphRAG thắng **4/6 câu**, và **thắng mọi câu `cross-kb`** (Q3, Q4, Q5 — cả ba đều là
 loại câu mà đáp án nằm rải ở 2 KB: tên người ở tin, khung hình phạt ở luật). Ở Q3 sự chênh lệch lớn
 nhất: recall 0.33 → 1.00 và judge 0 → 2. Ngược lại, ở hai câu **một KB** (Q1, Q2) Flat thắng hoặc
@@ -259,8 +264,13 @@ $ python bench_kg.py --check
 Ảnh Neo4j: `report/img/kg_count.png`, `report/img/kg_cross_kb.png`, `report/img/kg_my_case.png`.
 Người đã chọn cho `kg_my_case.png`: Dương Minh Tuấn (biệt danh “Hoàng Nato”)
 
-Bằng chứng Cypher cho mục 3: `report/img/error_evidence.txt`.
+Bằng chứng Cypher cho mục 3: `report/img/error_evidence.txt` (sinh bằng `scripts/error_evidence.py`).
 Đo kích thước prompt: `scripts/measure_prompt_size.py`.
+Chạy lại với **ontology gợi ý** để đối chiếu: `python scripts/run_hint_baseline.py` →
+`ket_qua_benchmark_kg.hint.txt` (bảng đối chiếu trước/sau ở `report/ONTOLOGY.md` mục 7b).
+
+**Lưu ý về ảnh:** cả 3 ảnh phải thấy **ô truy vấn** và **Results overview** ở cửa sổ trình duyệt
+đầy đủ, không cắt. Cửa sổ nhỏ quá thì Neo4j Browser **không hiện Results overview**.
 
 ---
 
