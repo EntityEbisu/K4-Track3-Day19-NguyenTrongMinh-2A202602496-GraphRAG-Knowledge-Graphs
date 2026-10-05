@@ -150,9 +150,18 @@ def hint_context(self, question: str, doc_ids: list[str], max_facts: int = 60) -
     return ordered[:max_facts]
 
 
-def main() -> int:
+def apply_hint_ontology() -> None:
+    """Swap the two ontology-dependent functions for their hint-ontology equivalents.
+
+    Must run BEFORE bench_kg.main() touches them, and must mutate the same module object
+    bench_kg holds (bench_kg.graph_mod is src.graph).
+    """
     G.build_graph = hint_build_graph
     G.Neo4jGraph.context = hint_context
+
+
+def main() -> int:
+    apply_hint_ontology()
 
     import bench_kg
     bench_kg.graph_mod = G
