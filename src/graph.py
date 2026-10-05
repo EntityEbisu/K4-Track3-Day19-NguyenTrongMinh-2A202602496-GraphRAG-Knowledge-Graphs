@@ -338,14 +338,18 @@ class Neo4jGraph:
                          f"({e['b_label']}: {e['b_name']})")
         return seed_ids, facts
 
-    # ---------------------------------------------------------------- HINT — suggested ontology: writes
+    # ---------------------------------------------------------------- ontology writes (custom)
 
-    def suggested_constraints(self) -> None:
-        for label, key in [("Article", "id"), ("Clause", "id"), ("Crime", "name"), ("Case", "name"),
-                           ("Substance", "name"), ("Person", "name"), ("Location", "name")]:
+    def constraints(self) -> None:
+        """Uniqueness for every MERGE key. Without these, MERGE still works but scans; with a
+        CREATE anywhere on the same label you get Schema.ConstraintValidationFailed."""
+        for label, key in [("Article", "id"), ("Clause", "id"), ("Crime", "name"), ("Case", "key"),
+                           ("Substance", "name"), ("Person", "name"), ("Location", "name"),
+                           ("Threshold", "id")]:
             self.run(f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.{key} IS UNIQUE")
 
     def add_law_article(self, article: dict) -> None:
+        """One MERGE query per article: Article -> Crime, Article -> Clause -> Substance/Threshold."""
         self.run(
             """
             MERGE (a:Article {id: $id}) SET a.title = $title, a.law = $law, a.doc_id = $doc_id
@@ -354,18 +358,33 @@ class Neo4jGraph:
             WITH a
             UNWIND $clauses AS clause
             MERGE (cl:Clause {id: clause.id})
-              SET cl.number = clause.number, cl.penalty = clause.penalty, cl.text = clause.text, cl.doc_id = $doc_id
+              SET cl.number = clause.number, cl.penalty = clause.penalty, cl.text = clause.text,
+                  cl.doc_id = $doc_id
             MERGE (a)-[:HAS_CLAUSE]->(cl)
-            FOREACH (s IN clause.substances | MERGE (sub:Substance {name: s}) MERGE (cl)-[:MENTIONS]->(sub))
+            FOREACH (s IN clause.substances
+                | MERGE (sub:Substance {name: s}) MERGE (cl)-[:MENTIONS]->(sub))
+            FOREACH (t IN clause.thresholds |
+                MERGE (th:Threshold {id: t.id})
+                  SET th.substance = t.substance, th.min_g = t.min_g, th.max_g = t.max_g,
+                      th.text = t.text, th.doc_id = $doc_id
+                MERGE (cl)-[:SETS_THRESHOLD]->(th)
+                MERGE (s2:Substance {name: t.substance}) MERGE (th)-[:FOR_SUBSTANCE]->(s2))
             """,
             **article,
         )
 
     def add_news_case(self, case: dict, doc: Document) -> None:
+        """Case.key = doc_id + '#' + position: a deterministic MERGE key, never an invented name.
+
+        The LLM still supplies `name` as a human-readable label, but identity does not depend on it,
+        so two model runs (or two articles describing one case) cannot silently fork the node.
+        """
+        key = case["key"]
         self.run(
             """
-            MERGE (k:Case {name: $name})
-              SET k.summary = $summary, k.date = $date, k.doc_id = $doc_id, k.source_title = $title
+            MERGE (k:Case {key: $key})
+              SET k.name = $name, k.summary = $summary, k.date = $date,
+                  k.doc_id = $doc_id, k.source_title = $title
             FOREACH (loc IN CASE WHEN $location = '' THEN [] ELSE [$location] END |
                 MERGE (l:Location {name: loc}) MERGE (k)-[:LOCATED_IN]->(l))
             FOREACH (crime IN $charges | MERGE (c:Crime {name: crime}) MERGE (k)-[:CHARGED_WITH]->(c))
@@ -373,14 +392,15 @@ class Neo4jGraph:
                 SET r.amount = s.amount)
             FOREACH (p IN $people | MERGE (person:Person {name: p.name})
                 SET person.aliases = coalesce(p.aliases, [])
-                MERGE (person)-[r:INVOLVED_IN]->(k) SET r.role = p.role, r.charge = p.charge, r.sentence = p.sentence)
+                MERGE (person)-[r:INVOLVED_IN]->(k) SET r.role = p.role, r.charge = p.charge,
+                    r.sentence = p.sentence)
             """,
-            name=case.get("name") or doc.metadata.get("title", doc.id),
+            key=key, name=case.get("name") or doc.metadata.get("title", doc.id),
             summary=case.get("summary", ""), date=case.get("date", ""), location=case.get("location", ""),
             charges=case.get("charges", []), people=[p for p in case.get("people", []) if p.get("name")],
             substances=[s for s in case.get("substances", []) if s.get("name")],
             doc_id=doc.id, title=doc.metadata.get("title", ""),
-        )
+                        )
 
     # ---------------------------------------------------------------- KG-3
 
