@@ -303,6 +303,16 @@ class GraphRAGAgent:
         self.llm_fn = llm_fn
 
     def answer(self, question: str, top_k: int = 3) -> str:
-        # TODO KG-4: vector top-k (same as flat RAG) -> doc_ids of the hits -> self.graph.context(question, doc_ids)
-        #            -> fill GRAPH_PROMPT -> self.llm_fn(prompt)
-        raise NotImplementedError("TODO KG-4 GraphRAGAgent.answer (src/graph.py) - kiểm tra: pytest tests/test_graph.py -k GraphRAGAgent")
+            chunks = self.store.search(question, top_k=top_k)
+            doc_ids: list[str] = []
+            for chunk in chunks:
+                doc_id = chunk["metadata"].get("doc_id")
+                if doc_id and doc_id not in doc_ids:
+                    doc_ids.append(doc_id)
+            facts = self.graph.context(question, doc_ids)
+            prompt = GRAPH_PROMPT.format(
+                facts="\n".join(f"- {fact}" for fact in facts) or "- (không có dữ kiện nào trong knowledge graph)",
+                chunks="\n\n".join(f"[{i}] {chunk['content']}" for i, chunk in enumerate(chunks, start=1)),
+                question=question,
+            )
+            return self.llm_fn(prompt)
